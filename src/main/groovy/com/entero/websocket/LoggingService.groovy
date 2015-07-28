@@ -1,0 +1,82 @@
+/*
+ * Copyright 2015 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.entero.websocket
+
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.PatternLayout
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
+import ch.qos.logback.core.Context
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.reactivestreams.Publisher
+import org.slf4j.LoggerFactory
+import ratpack.server.Service
+import ratpack.server.StartEvent
+import ratpack.server.StopEvent
+import ratpack.stream.internal.PushPublisher
+import ratpack.stream.internal.SimpleNonConcurrentPushPublisher
+
+class LoggingService implements Service {
+
+    private PatternLayout layout
+    private AppenderBase<ILoggingEvent> appender
+    private ObjectMapper objectMapper
+    private PushPublisher<String> pushPublisher
+    private Publisher<String> multicastPublisher
+
+    public LoggingService() {
+        this.layout = new PatternLayout()
+        this.layout.setContext((Context) LoggerFactory.getILoggerFactory())
+        this.layout.setPattern("%5p %d [%t] %F:%L - %m%n")
+        this.layout.start()
+        this.objectMapper = new ObjectMapper()
+
+        this.pushPublisher = new SimpleNonConcurrentPushPublisher<>()
+        this.multicastPublisher = pushPublisher.multicast()
+    }
+
+    @Override
+    void onStart(StartEvent event) throws Exception {
+        println "LoggingService.onStart"
+        appender = new AppenderBase<ILoggingEvent>() {
+            @Override
+            protected void append(ILoggingEvent eventObject) {
+                def data = [
+                        timestamp: eventObject.timeStamp,
+                        level    : eventObject.level.levelStr,
+                        message  : layout.doLayout(eventObject)
+                ]
+                pushPublisher.stream.push(objectMapper.writeValueAsString(data))
+            }
+        }
+
+        LoggerContext loggerContext = ((LoggerContext) LoggerFactory.getILoggerFactory())
+        appender.setContext(loggerContext)
+        appender.start()
+        ((Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME)).addAppender(appender)
+    }
+
+    @Override
+    void onStop(StopEvent event) throws Exception {
+        appender.stop()
+    }
+
+    Publisher<String> getPublisher() {
+        multicastPublisher
+    }
+}

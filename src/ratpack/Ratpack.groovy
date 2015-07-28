@@ -1,4 +1,4 @@
-import com.entero.websocket.LogFilePublisher
+import com.entero.websocket.LoggingService
 import com.fasterxml.jackson.databind.ObjectMapper
 import ratpack.func.Function
 
@@ -14,19 +14,19 @@ ratpack {
     }
 
     bindings {
-        bind(LogFilePublisher)
+        bindInstance(new LoggingService())
     }
 
     handlers {
-        get() {
-            redirect("index.html")
+        get {
+            redirect "index.html"
         }
 
-        get("ws") { ctx ->
-            websocketBroadcast(ctx, ctx.get(LogFilePublisher))
+        get("ws") { LoggingService loggingService ->
+            websocketBroadcast(context, loggingService.publisher)
         }
 
-        get("ws2") { ctx ->
+        get("ws2") {
             websocketBroadcast(context, periodically(registry, Duration.ofMillis(1000),
                     new Function<Integer, String>() {
                         @Override
